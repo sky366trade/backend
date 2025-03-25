@@ -34,14 +34,21 @@ router.post("/verify-payment", async (req, res) => {
         // Generate HMAC SHA256 signature
         const generated_signature = crypto
             .createHmac("sha256", process.env.RAZORPAY_SECRET)
-            .update(razorpay_order_id + "|" + razorpay_payment_id)
+            .update(`${razorpay_order_id}|${razorpay_payment_id}`)
             .digest("hex");
 
-        if (generated_signature === razorpay_signature) {
-            res.json({ success: true, message: "Payment verified successfully" });
-        } else {
-            res.status(400).json({ success: false, message: "Payment verification failed" });
+        if (generated_signature !== razorpay_signature) {
+            return res.status(400).json({ success: false, message: "Payment verification failed" });
         }
+
+        // ✅ Fetch actual payment status from Razorpay
+        const paymentDetails = await instance.payments.fetch(razorpay_payment_id);
+        if (paymentDetails.status !== "captured") {
+            return res.status(400).json({ success: false, message: "Payment not captured" });
+        }
+
+        // ✅ Payment is valid and captured
+        res.json({ success: true, message: "Payment verified successfully", paymentDetails });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

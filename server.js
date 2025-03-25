@@ -54,7 +54,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model("User", userSchema);
 
-const SECRET_KEY = "secretkey"; // JWT Secret Key
+const SECRET_KEY = process.env.SECRET_KEY;; // JWT Secret Key
 
 // ✅ User Registration
 app.post("/register", async (req, res) => {
@@ -64,7 +64,7 @@ app.post("/register", async (req, res) => {
     if (existingUser)
       return res.status(400).json({ msg: "Username already exists" });
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12); 
     const user = new User({ username, password: hashedPassword });
     await user.save();
 
