@@ -8,7 +8,7 @@ const nodemailer = require("nodemailer");
 const axios = require("axios");
 const path = require("path");
 
-const binanceRoutes = require("./Routes/binanceRoutes");
+const withdrawRoute = require("./Routes/withdraw");
 const PORT = process.env.PORT || 3000;
 const app = express();
 const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
@@ -31,7 +31,7 @@ mongoose
 const taskSchema = new mongoose.Schema({
   reward: { type: String, required: true },
   title: { type: String, required: true },
-  type: { type: String },
+  type: { type: String }, 
   status: { type: String, default: "pending" },
   date: {
     type: Date,
@@ -97,7 +97,9 @@ const {
   CRYPTOMUS_PAYMENT_URL,
   CRYPTOMUS_API_KEY,
 } = process.env;
-
+app.use(express.static(path.join(__dirname, "public")));
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
 app.post("/create-team", async (req, res) => {
   try {
     console.log("Headers:", req.headers);
@@ -168,9 +170,7 @@ app.post("/register", async (req, res) => {
 });
 app.use(express.static("public"));
 
-app.get("/", (req, res) => {
-  res.sendFile("index.html", { root: path.join(__dirname, "public") });
-});
+
 // User Login
 app.post("/login", async (req, res) => {
   try {
@@ -643,8 +643,10 @@ app.post("/getReward", async (req, res) => {
   }
 });
 //
-
-app.use("/api/binance", binanceRoutes);
+app.get("/", (req, res) => {
+  res.render("withdraw");
+});
+app.use("/api", withdrawRoute);
 app.use("/payment", paymentRoutes);
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
