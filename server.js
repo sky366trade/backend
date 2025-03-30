@@ -7,14 +7,11 @@ const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
 const axios = require("axios");
 const path = require("path");
-
-const withdrawRoute = require("./Routes/withdraw");
 const PORT = process.env.PORT || 3000;
 const app = express();
 const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const NOWPAYMENTS_URL = "https://api.nowpayments.io/v1/payment";
-
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -31,7 +28,7 @@ mongoose
 const taskSchema = new mongoose.Schema({
   reward: { type: String, required: true },
   title: { type: String, required: true },
-  type: { type: String }, 
+  type: { type: String },
   status: { type: String, default: "pending" },
   date: {
     type: Date,
@@ -70,11 +67,11 @@ const TeamSchema = new mongoose.Schema({
   },
   teamCount: {
     type: Number,
-    default:1,
+    default: 1,
   },
   teamWallet: {
-    type: Number ,
-      default: 0,
+    type: Number,
+    default: 0,
   },
 });
 const Team = mongoose.model("Team", TeamSchema);
@@ -113,24 +110,20 @@ app.post("/create-team", async (req, res) => {
     }
 
     const team = username;
-  
 
     // ✅ Debug database operation
     const newTeam = await Team.create({ team });
 
-    console.log("Created Team:", newTeam); // Debugging  
+    console.log("Created Team:", newTeam); // Debugging
 
     res.send("created");
   } catch (error) {
     console.error("Error creating team:", error);
-    res.status(500).json({ msg: "Internal Server Error", error: error.message });
+    res
+      .status(500)
+      .json({ msg: "Internal Server Error", error: error.message });
   }
 });
-
-
-
-
-
 
 // Authentication Middleware
 const authenticateToken = (req, res, next) => {
@@ -170,7 +163,6 @@ app.post("/register", async (req, res) => {
 });
 app.use(express.static("public"));
 
-
 // User Login
 app.post("/login", async (req, res) => {
   try {
@@ -201,7 +193,7 @@ app.get("/profile", authenticateToken, async (req, res) => {
       phone: userDetails.phone,
       wallet: userDetails.wallet,
       joinDate: userDetails.joinDate,
-      parent:userDetails.parent
+      parent: userDetails.parent,
     });
   } catch (error) {
     res.status(500).json({ msg: "Internal server error" });
@@ -245,8 +237,21 @@ app.post("/send-otp", async (req, res) => {
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
-      subject: "Your OTP Code",
-      text: `Your OTP is ${otp}. It expires in 5 minutes.`,
+      subject: "Your One-Time Password (OTP) for Secure Access – TradeFlyHub",
+      text: `Dear ${username},
+
+We have received a request to verify your identity for secure access to your TradeFly Hub account. Please use the following One-Time Password (OTP) to proceed:
+
+🔐 OTP: ${otp}
+
+This OTP is valid for 5 Minutes and should not be shared with anyone for security reasons.
+
+If you did not request this OTP, please ignore this email or contact our support team immediately.
+
+For assistance, reach out to us.
+
+Best regards,
+TradeFlyHub Team`,
     });
 
     // console.log(user);
@@ -270,6 +275,7 @@ app.post("/verify-otp", async (req, res) => {
     user.emailVerified = true;
     user.otp = undefined;
     user.otpExpiry = undefined;
+    user.team = username;
     await user.save();
 
     res.json({ msg: "User registered successfully" });
@@ -487,7 +493,7 @@ app.post("/create-invoice", async (req, res) => {
         price_amount: 1,
         price_currency: "usd",
         order_id: "RGDBP-21314",
-        order_description: "Apple Macbook Pro 2019 x 1",
+        order_description: "",
         ipn_callback_url: "https://nowpayments.io",
         success_url: "https://nowpayments.io",
         cancel_url: "https://nowpayments.io",
@@ -519,7 +525,7 @@ app.post("/create-payment", async (req, res) => {
 
       order_id: order_id,
       ipn_callback_url: WEBHOOK_URL,
-      order_description: "Apple Macbook Pro 2019 x 1",
+      order_description: "",
     };
 
     const response = await axios.post(NOWPAYMENTS_URL, paymentData, {
@@ -631,7 +637,7 @@ app.post("/getReward", async (req, res) => {
     await Team.findOneAndUpdate(
       { team: parent.team },
       {
-        $inc: { teamCount: 1,teamWallet: bonus },
+        $inc: { teamCount: 1, teamWallet: bonus },
       },
       {
         new: true,
@@ -643,10 +649,95 @@ app.post("/getReward", async (req, res) => {
   }
 });
 //
-app.get("/", (req, res) => {
-  res.render("withdraw");
+
+//To withdraw using the nowpayments...
+const API_KEY = process.env.NOWPAYMENTS_API_KEY; // Store API Key in .env file
+const WITHDRAW_URL = "https://api.nowpayments.io/v1/payout";
+
+app.post("/withdraw", async (req, res) => {
+  try {
+    const { currency, amount, toAddress, token } = req.body;
+
+    if (!currency || !amount || !toAddress) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const response = await axios.post(
+      WITHDRAW_URL,
+      {
+        currency, // e.g., "BTC", "ETH", "USDT"
+        amount, // Amount to withdraw
+        address: toAddress, // Destination wallet address
+      },
+      {
+        headers: {
+          "x-api-key": API_KEY,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    console.log("Withdrawal Successful:", response.data);
+    res.status(200).json(response.data);
+  } catch (error) {
+    console.error(
+      "Withdrawal Error:",
+      error.response ? error.response.data : error.message
+    );
+    res.status(500).json({
+      error: "Withdrawal failed",
+      details: error.response ? error.response.data : error.message,
+    });
+  }
 });
-app.use("/api", withdrawRoute);
+
+// Endpoint to check payout status
+app.get("/payout-status/:payoutId", async (req, res) => {
+  const { payoutId } = req.params;
+
+  try {
+    const response = await axios.get(
+      `https://api.nowpayments.io/v1/payout/${payoutId}`,
+      {
+        headers: {
+          "x-api-key": API_KEY,
+        },
+      }
+    );
+
+    res.json(response.data);
+  } catch (error) {
+    res.status(error.response?.status || 500).json({
+      error: "Failed to fetch payout status",
+      details: error.response?.data || error.message,
+    });
+  }
+});
+//
+app.post("/showDetails", async (req, res) => {
+  try {
+    const { username } = req.body;
+    
+    // Find user by username
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    // Find team by ID or name (modify according to schema)
+    const teamData = await Team.findOne({team:user.team}); // Use findOne if it's stored differently
+    if (!teamData) {
+      return res.status(404).json({ msg: "Team not found" });
+    }
+
+    res.json(teamData);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ msg: "Internal Server Error" });
+  }
+});
+
 app.use("/payment", paymentRoutes);
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
