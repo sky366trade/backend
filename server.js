@@ -49,6 +49,7 @@ const userSchema = new mongoose.Schema({
   wallet: { type: Number, default: 0 },
   joinDate: { type: Date, default: Date.now },
   emailVerified: { type: Boolean, default: false },
+  flag: { type: Boolean, default: false },
   otp: { type: String },
   otpExpiry: { type: Date },
   tasks: { type: [taskSchema], default: [] },
@@ -75,16 +76,15 @@ const TeamSchema = new mongoose.Schema({
   },
 });
 const Team = mongoose.model("Team", TeamSchema);
-//Transaction Schema to save the successful transactions
-const transactionSchema = new mongoose.Schema({
-  orderId: { type: String, required: true, uniwue: true },
+
+//Accept the Withdrawl request
+const TransactionSchema = new mongoose.Schema({
+  username: { type: String, required: true },
   amount: { type: Number, required: true },
-  currency: { type: String, required: true },
-  status: { type: String, required: true },
-  paymentUrl: { type: String },
-  createdAt: { type: Date, default: Date.now },
+  status: { type: String, default: "pending" },
+  usdttrc20Address: { type: String, requires: true },
 });
-const Transaction = mongoose.model("Transaction", transactionSchema);
+const Transaction = mongoose.model("Transaction", TransactionSchema);
 
 const {
   SECRET_KEY,
@@ -316,9 +316,13 @@ app.get("/view-task", authenticateToken, async (req, res) => {
     const userDetails = await User.findOne({ username });
 
     if (!userDetails) return res.status(404).json({ msg: "User not found" });
-
+    const tasks = await Task.find();
+    const today = new Date().toISOString().split("T")[0];
+    const taskDate = new Date(tasks[0].date).toISOString().split("T")[0];
     if (!userDetails.tasks || userDetails.tasks.length === 0) {
-      const tasks = await Task.find();
+      await User.findOneAndUpdate({ username }, { tasks }, { new: true });
+      return res.json({ tasks });
+    } else if (userDetails.tasks.length > 0 && today !== taskDate) {
       await User.findOneAndUpdate({ username }, { tasks }, { new: true });
       return res.json({ tasks });
     }
@@ -345,14 +349,22 @@ app.get("/completeTask/:taskId", authenticateToken, async (req, res) => {
     if (taskIndex === -1)
       return res.status(404).json({ error: "Task not found" });
 
+    // Mark task as completed
     userDetails.tasks[taskIndex].status = "completed";
-    const rewardPercentage =
-      parseFloat(userDetails.tasks[taskIndex].reward) || 0;
-    userDetails.wallet += (rewardPercentage / 100) * userDetails.wallet;
+
+    // Correct reward calculation
+    let rewardPercentage = parseFloat(userDetails.tasks[taskIndex].reward);
+    if (isNaN(rewardPercentage)) rewardPercentage = 0;
+
+    // Assuming base reward calculation is from a predefined amount (e.g., 100)
+    const rewardAmount = (rewardPercentage / 100) * 100;
+
+    userDetails.wallet += rewardAmount; // Add fixed reward to wallet
     await userDetails.save();
 
     return res.json({ wallet: userDetails.wallet });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ msg: "Internal server error" });
   }
 });
@@ -408,71 +420,10 @@ app.get("/get-tasks", async (req, res) => {
 const paymentModel = require("./models/payment");
 const paymentRoutes = require("./Routes/payment");
 const { render } = require("ejs");
-const { type } = require("os");
+const { type, userInfo } = require("os");
 
 // ✅ Middleware
-app.post("/crypto-payment", async (req, res) => {
-  try {
-    const { amount, currency } = req.body;
-    const orderId = `ORDER_${Date.now()}`;
-    const response = await fetch(CRYPTOMUS_PAYMENT_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        merchant: CRYPTOMUS_MERCHANT_ID,
-        sign: CRYPTOMUS_API_KEY,
-      },
-      body: JSON.stringify({
-        merchant_id: CRYPTOMUS_MERCHANT_ID,
-        amount,
-        currency,
-        orderId,
-        callbackUrl: CRYPTOMUS_CALLBACK_URL,
-      }),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new error(`Cryptomous Error: ${data.message}`);
-    }
-    //Now if the transaction is done successfully, we will save the transaction details in our database
-    const transaction = new Transaction({
-      orderId,
-      amount,
-      currency,
-      status: "pending",
-      paymentUrl: data.paymentUrl,
-    });
-    await transaction.save();
-    res.json({ paymentUrl: data.paymentUrl, success: true });
-  } catch (error) {
-    console.error("Crypto Payment Error:", error);
-    res.status(500).json({ msg: "Internal server error" });
-  }
-});
-//Now the transactions is created successfully and we have got the payment URL, now we will create a route to handle the callback URL
-// ✅ Callback URL
-app.post("/crypto-payment/callback", async (req, res) => {
-  try {
-    const { order_id, status } = req.body;
-    const transaction = await Transaction.findOneAndUpdate(
-      { orderId: order_id },
-      { status },
-      { new: true }
-    );
-    if (!transaction) {
-      return res.status(404).json({ msg: "Transaction not found" });
-    }
-    console.log("Transaction Updated Successfully");
-    res.json({ success: true });
-  } catch (error) {
-    console.error("Crypto Payment Callback Error:", error);
-    res.status(500).json({ msg: "Internal server error" });
-  }
-});
-// ✅ Payment Success
-app.get("/payment-success", (req, res) => {
-  res.send("Payment Successful");
-});
+
 // ✅ Payment Failure
 app.get("/payment-failure", (req, res) => {
   res.send("Payment Failed");
@@ -486,17 +437,18 @@ app.get("/payment-cancelled", (req, res) => {
 // const API_KEY = process.env.COINBASE_API_KEY; // Store API Key in .env
 //Make invoice
 app.post("/create-invoice", async (req, res) => {
+  const { username, amount, order_id } = req.body;
   try {
     const response = await axios.post(
       "https://api.nowpayments.io/v1/invoice",
       {
-        price_amount: 1,
+        price_amount: amount,
         price_currency: "usd",
-        order_id: "RGDBP-21314",
-        order_description: "",
+        order_id: order_id,
+        order_description: "Deposit",
         ipn_callback_url: "https://nowpayments.io",
-        success_url: "https://nowpayments.io",
-        cancel_url: "https://nowpayments.io",
+        success_url: `https://www.tradeflyhub.com/success/${username}/${amount}`,
+        cancel_url: "https://www.tradeflyhub.com/cancel",
       },
       {
         headers: {
@@ -573,21 +525,21 @@ app.post("/payment-webhook", async (req, res) => {
   res.status(200).send("Webhook received");
 });
 // Admin Login
-app.post("/api/admin/login", async (req, res) => {
-  try {
-    const { username, password } = req.body;
+// app.post("/api/admin/login", async (req, res) => {
+//   try {
+//     const { username, password } = req.body;
 
-    // Add your admin credentials validation here
-    // For example, check against admin users in the database
+//     // Add your admin credentials validation here
+//     // For example, check against admin users in the database
 
-    const token = jwt.sign({ username, role: "admin" }, SECRET_KEY, {
-      expiresIn: "1d",
-    });
-    res.json({ token });
-  } catch (error) {
-    res.status(500).json({ msg: "Internal server error" });
-  }
-});
+//     const token = jwt.sign({ username, role: "admin" }, SECRET_KEY, {
+//       expiresIn: "1d",
+//     });
+//     res.json({ token });
+//   } catch (error) {
+//     res.status(500).json({ msg: "Internal server error" });
+//   }
+// });
 
 // Delete Task
 app.delete("/api/tasks/:taskId", authenticateToken, async (req, res) => {
@@ -599,51 +551,109 @@ app.delete("/api/tasks/:taskId", authenticateToken, async (req, res) => {
     res.status(500).json({ msg: "Internal server error" });
   }
 });
-//write Refferal Code and get joined in the team:
-app.post("/getReward", async (req, res) => {
+//setting the parent
+app.post("/setParent", async (req, res) => {
   try {
-    const { username, user } = req.body;
-    const parent = await User.findOne({ username: user });
+    const { username, user } = req.body; // Existing user (parent) and new user (child)
 
-    if (!parent) return res.status(404).json({ msg: "No reward found" });
-    let root = parent.username;
+    // Fetch Parent Details
+    const parentDetails = await User.findOne({ username: user });
+    if (!parentDetails) {
+      return res.status(404).json({ msg: "No rewarding member" });
+    }
+
+    let root = user;
     let level = 2;
-    while (root != null) {
-      const parent = await User.findOne({ username: root });
-      root = parent.parent;
+
+    // Create a new team for the user
+    await Team.create({ team: username, member: 1 });
+
+    // Traverse up to 7 levels
+    while (root !== null) {
+      const rootDetails = await User.findOne({ username: root }, { parent: 1 });
+      if (!rootDetails) break;
+
+      root = rootDetails.parent;
       level++;
+
       if (level > 7) {
-        Team.create(
-          {
-            team: username,
-          },
-          { member: 1 }
-        );
-        return res.status(404).json({ msg: "No reward found" });
+        return res
+          .status(200)
+          .json({ msg: "Added, but no rewarding member found" });
       }
     }
 
-    const bonus = (parent.wallet / 100) * 10;
-    await User.findOneAndUpdate(
-      { username: parent.username },
+    // Update the current user's parent
+    const userUpdate = await User.findOneAndUpdate(
+      { username },
+      { parent: user },
+      { new: true }
+    );
+
+    if (!userUpdate) {
+      return res.status(404).json({ msg: "User not found for parent update" });
+    }
+
+    // Increment the parent team's count
+    let parentTeam = userUpdate.parent;
+    while (parentTeam) {
+      await Team.findOneAndUpdate(
+        { team: parentTeam },
+        { $inc: { teamCount: 1 } },
+        { new: true }
+      );
+
+      // Fetch the next parent
+      const parentData = await User.findOne(
+        { username: parentTeam },
+        { parent: 1 }
+      );
+      parentTeam = parentData ? parentData.parent : null;
+    }
+
+    return res.json({ msg: "Added to the Team Successfully" });
+  } catch (error) {
+    console.error("Error in /setParent:", error);
+    return res.status(500).json({ msg: error.message });
+  }
+});
+
+//write Refferal Code and get joined in the team:
+app.post("/getReward", async (req, res) => {
+  try {
+    const { username, amount } = req.body;
+    const userDetails = await User.findOne({ username });
+    if (!userDetails) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+    const parent = userDetails.parent;
+    const flag = userDetails.flag;
+    if (parent === null || flag === false) {
+      return res.status(404).json({ msg: "No rewarding memeber found" });
+    }
+    const bonus = (amount / 100) * 10;
+    // Update both user's parent wallet and team wallet in parallel
+
+    const parentUpdate = await User.findOneAndUpdate(
+      { username: parent },
       { $inc: { wallet: bonus } },
       { new: true }
     );
-    await User.findOneAndUpdate(
-      { username },
-      { team: parent.team, parent: parent.username },
+
+    const teamUpdate = await Team.findOneAndUpdate(
+      { team: parent },
+      { $inc: { teamWallet: bonus } },
       { new: true }
     );
-    await Team.findOneAndUpdate(
-      { team: parent.team },
-      {
-        $inc: { teamCount: 1, teamWallet: bonus },
-      },
-      {
-        new: true,
-      }
+    const userUpdate = await User.findOneAndUpdate(
+      { username },
+      { flag: true },
+      { new: true }
     );
-    return res.json({ msg: "Added to the Team Successfully" });
+
+    await Promise.all([parentUpdate, teamUpdate, userUpdate]);
+
+    return res.json({ msg: "Reward successfully distributed", bonus });
   } catch (error) {
     res.status(500).json({ msg: "Internal server error" });
   }
@@ -651,74 +661,12 @@ app.post("/getReward", async (req, res) => {
 //
 
 //To withdraw using the nowpayments...
-const API_KEY = process.env.NOWPAYMENTS_API_KEY; // Store API Key in .env file
-const WITHDRAW_URL = "https://api.nowpayments.io/v1/payout";
-
-app.post("/withdraw", async (req, res) => {
-  try {
-    const { currency, amount, toAddress, token } = req.body;
-
-    if (!currency || !amount || !toAddress) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
-
-    const response = await axios.post(
-      WITHDRAW_URL,
-      {
-        currency, // e.g., "BTC", "ETH", "USDT"
-        amount, // Amount to withdraw
-        address: toAddress, // Destination wallet address
-      },
-      {
-        headers: {
-          "x-api-key": API_KEY,
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    console.log("Withdrawal Successful:", response.data);
-    res.status(200).json(response.data);
-  } catch (error) {
-    console.error(
-      "Withdrawal Error:",
-      error.response ? error.response.data : error.message
-    );
-    res.status(500).json({
-      error: "Withdrawal failed",
-      details: error.response ? error.response.data : error.message,
-    });
-  }
-});
-
-// Endpoint to check payout status
-app.get("/payout-status/:payoutId", async (req, res) => {
-  const { payoutId } = req.params;
-
-  try {
-    const response = await axios.get(
-      `https://api.nowpayments.io/v1/payout/${payoutId}`,
-      {
-        headers: {
-          "x-api-key": API_KEY,
-        },
-      }
-    );
-
-    res.json(response.data);
-  } catch (error) {
-    res.status(error.response?.status || 500).json({
-      error: "Failed to fetch payout status",
-      details: error.response?.data || error.message,
-    });
-  }
-});
+const API_KEY = process.env.NOWPAYMENTS_API_KEY;
 //
 app.post("/showDetails", async (req, res) => {
   try {
     const { username } = req.body;
-    
+
     // Find user by username
     const user = await User.findOne({ username });
     if (!user) {
@@ -726,7 +674,7 @@ app.post("/showDetails", async (req, res) => {
     }
 
     // Find team by ID or name (modify according to schema)
-    const teamData = await Team.findOne({team:user.team}); // Use findOne if it's stored differently
+    const teamData = await Team.findOne({ team: user.team }); // Use findOne if it's stored differently
     if (!teamData) {
       return res.status(404).json({ msg: "Team not found" });
     }
@@ -735,6 +683,66 @@ app.post("/showDetails", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ msg: "Internal Server Error" });
+  }
+});
+//
+app.post("/withdrawalRequest", authenticateToken, async (req, res) => {
+  const { username } = req.user;
+  const { amount, usdttrc20Address } = req.body;
+
+  try {
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+    const transactions = await Transaction.find({ username });
+    for (let i = 0; i < transactions.length; i++) {
+      if (transactions[i].status === "pending") {
+        return res
+          .status(400)
+          .json({ msg: "Pending withdrawal request exists" });
+      }
+    }
+    if (amount > user.wallet) {
+      return res.status(400).json({ msg: "Insufficient balance" });
+    }
+    const transaction = new Transaction({
+      username,
+      amount,
+      usdttrc20Address,
+    });
+    await transaction.save();
+    res.json({ msg: "Withdrawal request created successfully" });
+  } catch (error) {
+    console.error("Error processing withdrawal request:", error);
+    res.status(500).json({ msg: "Internal server error" });
+  }
+});
+app.get("/withdrawalInfo", authenticateToken, async (req, res) => {
+  const { username } = req.user;
+  try {
+    const transactions = await Transaction.find({ username });
+    if (!transactions) {
+      return res.status(404).json({ msg: "No transactions found" });
+    }
+    return res.json({ transactions });
+  } catch (error) {
+    console.error("Error fetching transactions:", error);
+    res.status(500).json({ msg: "Internal server error" });
+  }
+});
+//Showing the teams Info
+app.get("/showTeamInfo", authenticateToken, async (req, res) => {
+  const { username } = req.user;
+  try {
+    const teams = await User.find({ parent: username });
+    if (!teams) {
+      return res.status(404).json({ msg: "No teams found" });
+    }
+    return res.json({ teams });
+  } catch (error) {
+    console.error("Error fetching teams:", error);
+    res.status(500).json({ msg: "Internal server error" });
   }
 });
 
