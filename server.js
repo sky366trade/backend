@@ -418,7 +418,7 @@ app.get("/get-tasks", async (req, res) => {
 });
 // Import Models & Routes
 const paymentModel = require("./models/payment");
-const paymentRoutes = require("./Routes/payment");
+
 const { render } = require("ejs");
 const { type, userInfo } = require("os");
 
@@ -746,7 +746,6 @@ app.get("/showTeamInfo", authenticateToken, async (req, res) => {
   }
 });
 
-app.use("/payment", paymentRoutes);
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
 });
