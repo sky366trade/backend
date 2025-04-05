@@ -357,7 +357,7 @@ app.get("/completeTask/:taskId", authenticateToken, async (req, res) => {
     if (isNaN(rewardPercentage)) rewardPercentage = 0;
 
     // Assuming base reward calculation is from a predefined amount (e.g., 100)
-    const rewardAmount = (rewardPercentage / 100) * 100;
+    const rewardAmount = (rewardPercentage*userDetails.wallet) /100;
 
     userDetails.wallet += rewardAmount; // Add fixed reward to wallet
     await userDetails.save();
