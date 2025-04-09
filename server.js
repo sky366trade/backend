@@ -83,6 +83,7 @@ const TransactionSchema = new mongoose.Schema({
   amount: { type: Number, required: true },
   status: { type: String, default: "pending" },
   usdttrc20Address: { type: String, requires: true },
+  bep20Address: { type: String, requires: true }
 });
 const Transaction = mongoose.model("Transaction", TransactionSchema);
 
@@ -317,8 +318,9 @@ app.get("/view-task", authenticateToken, async (req, res) => {
 
     if (!userDetails) return res.status(404).json({ msg: "User not found" });
     const tasks = await Task.find();
+    const userTasks = userDetails.tasks;
     const today = new Date().toISOString().split("T")[0];
-    const taskDate = new Date(tasks[0].date).toISOString().split("T")[0];
+    const taskDate = new Date(userTasks[0].date).toISOString().split("T")[0];
     if (!userDetails.tasks || userDetails.tasks.length === 0) {
       await User.findOneAndUpdate({ username }, { tasks }, { new: true });
       return res.json({ tasks });
@@ -688,7 +690,7 @@ app.post("/showDetails", async (req, res) => {
 //
 app.post("/withdrawalRequest", authenticateToken, async (req, res) => {
   const { username } = req.user;
-  const { amount, usdttrc20Address } = req.body;
+  const { amount, usdttrc20Address,bep20Address } = req.body;
 
   try {
     const user = await User.findOne({ username });
@@ -710,6 +712,7 @@ app.post("/withdrawalRequest", authenticateToken, async (req, res) => {
       username,
       amount,
       usdttrc20Address,
+      bep20Address
     });
     await transaction.save();
     res.json({ msg: "Withdrawal request created successfully" });
