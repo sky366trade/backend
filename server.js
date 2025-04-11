@@ -320,7 +320,10 @@ app.get("/view-task", authenticateToken, async (req, res) => {
     const tasks = await Task.find();
     const userTasks = userDetails.tasks;
     const today = new Date().toISOString().split("T")[0];
-    const taskDate = new Date(userTasks[0].date).toISOString().split("T")[0];
+    let taskDate = null;
+    if(userTasks.length !== 0) {
+    taskDate = new Date(userTasks[0].date).toISOString().split("T")[0];
+    }
     if (!userDetails.tasks || userDetails.tasks.length === 0) {
       await User.findOneAndUpdate({ username }, { tasks }, { new: true });
       return res.json({ tasks });
