@@ -83,7 +83,7 @@ const TransactionSchema = new mongoose.Schema({
   amount: { type: Number, required: true },
   status: { type: String, default: "pending" },
   usdttrc20Address: { type: String, requires: true },
-  bep20Address: { type: String, requires: true }
+  bep20Address: { type: String, requires: true },
 });
 const Transaction = mongoose.model("Transaction", TransactionSchema);
 
@@ -321,8 +321,8 @@ app.get("/view-task", authenticateToken, async (req, res) => {
     const userTasks = userDetails.tasks;
     const today = new Date().toISOString().split("T")[0];
     let taskDate = null;
-    if(userTasks.length !== 0) {
-    taskDate = new Date(userTasks[0].date).toISOString().split("T")[0];
+    if (userTasks.length !== 0) {
+      taskDate = new Date(userTasks[0].date).toISOString().split("T")[0];
     }
     if (!userDetails.tasks || userDetails.tasks.length === 0) {
       await User.findOneAndUpdate({ username }, { tasks }, { new: true });
@@ -362,7 +362,7 @@ app.get("/completeTask/:taskId", authenticateToken, async (req, res) => {
     if (isNaN(rewardPercentage)) rewardPercentage = 0;
 
     // Assuming base reward calculation is from a predefined amount (e.g., 100)
-    const rewardAmount = (rewardPercentage*userDetails.wallet) /100;
+    const rewardAmount = (rewardPercentage * userDetails.wallet) / 100;
 
     userDetails.wallet += rewardAmount; // Add fixed reward to wallet
     await userDetails.save();
@@ -680,8 +680,10 @@ app.post("/showDetails", async (req, res) => {
 
     // Find team by ID or name (modify according to schema)
     const teamData = await Team.findOne({ team: user.team }); // Use findOne if it's stored differently
-    if (!teamData) {
-      return res.status(404).json({ msg: "Team not found" });
+    if (teamData==="") {
+      await Team.create({ team: user.team, teamCount: 1 });
+      teamData = await Team.findOne({ team: user.team });
+    
     }
 
     res.json(teamData);
@@ -693,7 +695,7 @@ app.post("/showDetails", async (req, res) => {
 //
 app.post("/withdrawalRequest", authenticateToken, async (req, res) => {
   const { username } = req.user;
-  const { amount, usdttrc20Address,bep20Address } = req.body;
+  const { amount, usdttrc20Address, bep20Address } = req.body;
 
   try {
     const user = await User.findOne({ username });
@@ -715,7 +717,7 @@ app.post("/withdrawalRequest", authenticateToken, async (req, res) => {
       username,
       amount,
       usdttrc20Address,
-      bep20Address
+      bep20Address,
     });
     await transaction.save();
     res.json({ msg: "Withdrawal request created successfully" });
@@ -751,7 +753,18 @@ app.get("/showTeamInfo", authenticateToken, async (req, res) => {
     res.status(500).json({ msg: "Internal server error" });
   }
 });
-
+app.delete("/delete-unverified-users", async (req, res) => {
+  try {
+    const deleted_users=await User.deleteMany({ emailVerified: false });
+    if(deleted_users.deletedCount===0){
+      return res.status(404).json({ msg: "No verified users exists" });
+    }
+    res.status(200).json({ msg: "Users deleted successfully" ,count:deleted_users.deletedCount});
+  } catch (error) {
+    console.error("Error deleting users:", error);
+    res.status(500).json({ msg: "Internal server error" });
+  }
+});
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
 });
