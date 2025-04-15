@@ -168,13 +168,20 @@ app.use(express.static("public"));
 app.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
-    const user = await User.findOne({ username });
-
-    if (!user || !(await bcrypt.compare(password, user.password))) {
+    const user = await User.findOne({ 
+     $or: [{username} , { email: username }] 
+    });
+    if (!user ) {
+      return res.status(401).json({ msg: "Invalid Credentials" });
+    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
       return res.status(401).json({ msg: "Invalid Credentials" });
     }
 
-    const token = jwt.sign({ username }, SECRET_KEY, { expiresIn: "1h" });
+
+    
+    const token = jwt.sign({ username:user.username }, SECRET_KEY, { expiresIn: "1h" });
     return res.json({ token, tasks: user.tasks });
   } catch (error) {
     console.error("Login Error:", error);
@@ -443,6 +450,11 @@ app.get("/payment-cancelled", (req, res) => {
 //Make invoice
 app.post("/create-invoice", async (req, res) => {
   const { username, amount, order_id } = req.body;
+
+  if (typeof amount !== "number" || isNaN(amount)) {
+    return res.status(400).json({ error: "Invalid amount" });
+  }
+
   try {
     const response = await axios.post(
       "https://api.nowpayments.io/v1/invoice",
@@ -451,23 +463,27 @@ app.post("/create-invoice", async (req, res) => {
         price_currency: "usd",
         order_id: order_id,
         order_description: "Deposit",
-        ipn_callback_url: "https://nowpayments.io",
         success_url: `https://www.tradeflyhub.com/success/${username}/${amount}`,
-        cancel_url: "https://www.tradeflyhub.com/cancel",
+        cancel_url: "https://www.tradeflyhub.com/cancel"
+        // Remove ipn_callback_url unless you're handling IPNs
       },
       {
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": NOWPAYMENTS_API_KEY,
+          "x-api-key": process.env.NOWPAYMENTS_API_KEY,
         },
       }
     );
     res.json(response.data);
   } catch (error) {
-    console.error("Error creating invoice:", error.response?.data || error);
+    console.error("Error creating invoice:", {
+      status: error.response?.status,
+      data: error.response?.data,
+    });
     res.status(500).json({ error: "Failed to create invoice" });
   }
 });
+
 
 // Create a new payment charge
 
