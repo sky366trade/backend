@@ -139,49 +139,47 @@ const authenticateToken = (req, res, next) => {
   }
 };
 
-// User Registration
-app.post("/register", async (req, res) => {
+// Check for Register Eligibility
+app.post("/check-register", async (req, res) => {
   try {
-    const { username, password, email, phone } = req.body;
+    const { username, email } = req.body;
+
+    const existingEmail = await User.findOne({ email });
+    if (existingEmail) {
+      return res.status(400).json({ msg: "Email already exists" });
+    }
+
     const existingUser = await User.findOne({ username });
-    if (existingUser)
+    if (existingUser) {
       return res.status(400).json({ msg: "Username already exists" });
+    }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
-    const user = new User({
-      username,
-      password: hashedPassword,
-      email,
-      phone,
-      joinDate: new Date(),
-    });
-    await user.save();
-
-    res.status(200).json({ msg: "User registered successfully" });
+    res.status(200).json({ success: "Username and Email are available" });
   } catch (error) {
-    res.status(500).json({ error: "Server Error" });
+    console.error("Check-register error:", error);
+    res.status(500).json({ msg: "Server Error" });
   }
 });
+
 app.use(express.static("public"));
 
 // User Login
 app.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
-    const user = await User.findOne({ 
-     $or: [{username} , { email: username }] 
+    const user = await User.findOne({
+      $or: [{ username }, { email: username }],
     });
-    if (!user ) {
+    if (!user) {
       return res.status(401).json({ msg: "Invalid Credentials" });
     }
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ msg: "Invalid Credentials" });
     }
-
-
-    
-    const token = jwt.sign({ username:user.username }, SECRET_KEY, { expiresIn: "1h" });
+    const token = jwt.sign({ username: user.username }, SECRET_KEY, {
+      expiresIn: "1h",
+    });
     return res.json({ token, tasks: user.tasks });
   } catch (error) {
     console.error("Login Error:", error);
@@ -464,7 +462,7 @@ app.post("/create-invoice", async (req, res) => {
         order_id: order_id,
         order_description: "Deposit",
         success_url: `https://www.tradeflyhub.com/success/${username}/${amount}`,
-        cancel_url: "https://www.tradeflyhub.com/cancel"
+        cancel_url: "https://www.tradeflyhub.com/cancel",
         // Remove ipn_callback_url unless you're handling IPNs
       },
       {
@@ -483,7 +481,6 @@ app.post("/create-invoice", async (req, res) => {
     res.status(500).json({ error: "Failed to create invoice" });
   }
 });
-
 
 // Create a new payment charge
 
@@ -696,10 +693,9 @@ app.post("/showDetails", async (req, res) => {
 
     // Find team by ID or name (modify according to schema)
     const teamData = await Team.findOne({ team: user.team }); // Use findOne if it's stored differently
-    if (teamData==="") {
+    if (teamData === "") {
       await Team.create({ team: user.team, teamCount: 1 });
       teamData = await Team.findOne({ team: user.team });
-    
     }
 
     res.json(teamData);
@@ -771,15 +767,62 @@ app.get("/showTeamInfo", authenticateToken, async (req, res) => {
 });
 app.delete("/delete-unverified-users", async (req, res) => {
   try {
-    const deleted_users=await User.deleteMany({ emailVerified: false });
-    if(deleted_users.deletedCount===0){
+    const deleted_users = await User.deleteMany({ emailVerified: false });
+    if (deleted_users.deletedCount === 0) {
       return res.status(404).json({ msg: "No verified users exists" });
     }
-    res.status(200).json({ msg: "Users deleted successfully" ,count:deleted_users.deletedCount});
+    res.status(200).json({
+      msg: "Users deleted successfully",
+      count: deleted_users.deletedCount,
+    });
   } catch (error) {
     console.error("Error deleting users:", error);
     res.status(500).json({ msg: "Internal server error" });
   }
+});
+//Finding the total teams
+app.post("/total-teams-details", async (req, res) => {
+  const { username } = req.body;
+  const teams = {
+    level1: [],
+    level2: [],
+    level3: [],
+    level4: [],
+    level5: [],
+    level6: [],
+  };
+  teams.level1.push(await User.find({ parent: username }));
+  teams.level1 = teams.level1.flat(2);
+  for (let i = 0; i < teams.level1.length; i++) {
+    teams.level2.push(await User.find({ parent: teams.level1[i].username }));
+  }
+  teams.level2 = teams.level2.flat(2);
+  for (let j = 0; j < teams.level2.length; j++) {
+    teams.level3.push(await User.find({ parent: teams.level2[j].username }));
+  }
+   
+  teams.level3 = teams.level3.flat(2);
+  for (let k = 0; k < teams.level3.length; k++) {
+    teams.level4.push(await User.find({ parent: teams.level3[k].username }));
+  }
+  teams.level4 = teams.level4.flat(2);
+  for (let l = 0; l < teams.level4.length; l++) {
+    teams.level5.push(await User.find({ parent: teams.level4[l].username }));
+  }
+  teams.level5 = teams.level5.flat(2);
+  for (let m = 0; m < teams.level5.length; m++) {
+    teams.level6.push(await User.find({ parent: teams.level5[m].username }));
+  }
+  teams.level6 = teams.level6.flat(2);
+ 
+ 
+
+ 
+  
+  if (!teams) {
+    return res.status(404).json({ msg: "No teams found" });
+  }
+  return res.json({ teams });
 });
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
