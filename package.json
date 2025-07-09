@@ -1,12 +1,12 @@
 {
-  "name": "Tradeflyhub",
+  "name": "Sky366trade",
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "Pawan Kumar Verma(Under Supervision of Praveen and Ankit)",
+  "author": "Ramlal",
   "license": "ISC",
   "description": "",
   "dependencies": {
