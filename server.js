@@ -351,7 +351,7 @@ app.get("/view-task", authenticateToken, async (req, res) => {
     const userTasks = userDetails.tasks;
     // console.log({task:currentTaskDate});
     // console.log(new Date(userTasks[0].date).toISOString().split("T")[0]);
-    // const today = new Date().toISOString().split("T")[0];
+    const today = new Date().toISOString().split("T")[0];
     let taskDate = null;
     if (userTasks.length !== 0) {
       taskDate = new Date(userTasks[0].date).toISOString().split("T")[0];
@@ -359,7 +359,7 @@ app.get("/view-task", authenticateToken, async (req, res) => {
     if (userDetails.tasks.length === 0) {
       await User.findOneAndUpdate({ username }, { tasks }, { new: true });
       return res.json({ tasks });
-    } else if (userDetails.tasks.length > 0 && currentTaskDate !== taskDate) {
+    } else if (userDetails.tasks.length > 0 && currentTaskDate === today) {
       await User.findOneAndUpdate({ username }, { tasks }, { new: true });
       return res.json({ tasks });
     }
@@ -376,7 +376,7 @@ app.get("/completeTask/:taskId", authenticateToken, async (req, res) => {
   try {
     const { taskId } = req.params;
     const { username } = req.user;
-
+console.log(username,taskId);
     const userDetails = await User.findOne({ username });
     if (!userDetails) return res.status(404).json({ error: "User not found" });
 
@@ -397,7 +397,9 @@ app.get("/completeTask/:taskId", authenticateToken, async (req, res) => {
     const rewardAmount = (rewardPercentage * userDetails.wallet) / 100;
 
     userDetails.wallet += rewardAmount; // Add fixed reward to wallet
-    await userDetails.save();
+    console.log(userDetails.tasks)
+ const user=await User.findByIdAndUpdate(userDetails._id, userDetails, { new: true });
+console.log(user);
 
     return res.json({ wallet: userDetails.wallet });
   } catch (error) {
