@@ -59,6 +59,30 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null,
   },
+  level1Bonus: {
+    type: Boolean,
+    default: false,
+  },
+  level2Bonus: {
+    type: Boolean,
+    default: false,
+  },
+  level3Bonus: {
+    type: Boolean,
+    default: false,
+  },
+  level4Bonus: {
+    type: Boolean,
+    default: false,
+  },
+  level5Bonus: {
+    type: Boolean,
+    default: false,
+  },
+  level6Bonus: {
+    type: Boolean,
+    default: false,
+  },
 });
 const User = mongoose.model("User", userSchema);
 //Team Schema
@@ -243,7 +267,7 @@ app.post("/send-otp", async (req, res) => {
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
-      subject: "Your One-Time Password (OTP) for Secure Access – TradeFlyHub",
+      subject: "Your One-Time Password (OTP) for Secure Access – Sky366Trade",
       text: `Dear ${username},
 
 We have received a request to verify your identity for secure access to your TradeFly Hub account. Please use the following One-Time Password (OTP) to proceed:
@@ -257,7 +281,7 @@ If you did not request this OTP, please ignore this email or contact our support
 For assistance, reach out to us.
 
 Best regards,
-TradeFlyHub Team`,
+Sky366Trade Team`,
     });
 
     // console.log(user);
@@ -323,16 +347,19 @@ app.get("/view-task", authenticateToken, async (req, res) => {
 
     if (!userDetails) return res.status(404).json({ msg: "User not found" });
     const tasks = await Task.find();
+    const currentTaskDate = new Date(tasks[0].date).toISOString().split("T")[0];
     const userTasks = userDetails.tasks;
-    const today = new Date().toISOString().split("T")[0];
+    // console.log({task:currentTaskDate});
+    // console.log(new Date(userTasks[0].date).toISOString().split("T")[0]);
+    // const today = new Date().toISOString().split("T")[0];
     let taskDate = null;
     if (userTasks.length !== 0) {
       taskDate = new Date(userTasks[0].date).toISOString().split("T")[0];
     }
-    if (!userDetails.tasks || userDetails.tasks.length === 0) {
+    if (userDetails.tasks.length === 0) {
       await User.findOneAndUpdate({ username }, { tasks }, { new: true });
       return res.json({ tasks });
-    } else if (userDetails.tasks.length > 0 && today !== taskDate) {
+    } else if (userDetails.tasks.length > 0 && currentTaskDate !== taskDate) {
       await User.findOneAndUpdate({ username }, { tasks }, { new: true });
       return res.json({ tasks });
     }
@@ -418,14 +445,7 @@ app.post("/submit-task", async (req, res) => {
 });
 
 // ✅ Fetch All Tasks
-app.get("/get-tasks", async (req, res) => {
-  try {
-    const task = await Task.find();
-    res.json(task);
-  } catch (error) {
-    res.status(500).json({ msg: "Internal server error" });
-  }
-});
+
 // Import Models & Routes
 const paymentModel = require("./models/payment");
 
@@ -461,8 +481,8 @@ app.post("/create-invoice", async (req, res) => {
         price_currency: "usd",
         order_id: order_id,
         order_description: "Deposit",
-        success_url: `https://www.tradeflyhub.com/success/${username}/${amount}`,
-        cancel_url: "https://www.tradeflyhub.com/cancel",
+        success_url: `${process.env.FRONT_END}/success/${username}/${amount}`,
+        cancel_url: `${process.env.FRONT_END}/cancel`,
         // Remove ipn_callback_url unless you're handling IPNs
       },
       {
@@ -644,35 +664,53 @@ app.post("/getReward", async (req, res) => {
     if (!userDetails) {
       return res.status(404).json({ msg: "User not found" });
     }
+    console.log(userDetails)
     const parent = userDetails.parent;
     const flag = userDetails.flag;
-    if (parent === null || flag === false) {
-      return res.status(404).json({ msg: "No rewarding memeber found" });
+    if (parent === null || flag === true) {
+      return res.status(404).json({ msg: "No rewarding member found" });
+    } else {
+      const bonus1 = (amount / 100) * 10;
+      const bonus2 = (amount / 100) * 5;
+      const bonus3 = (amount / 100) * 3;
+      // Update both user's parent wallet and team wallet in parallel
+
+      const parent01 = await User.findOneAndUpdate(
+        { username: parent },
+        { $inc: { wallet: bonus1 } },
+        { new: true }
+      );
+      
+      console.log("parent01:", parent01);
+      if (parent01.parent !== null) {
+        const parent02 = await User.findOneAndUpdate(
+          { username: parent01.parent },
+          { $inc: { wallet: bonus2 } },
+          { new: true }
+        );
+        console.log("parent02:", parent02);
+        if (parent02.parent !== null) {
+          const parent03 = await User.findOneAndUpdate(
+            { username: parent02.parent },
+            { $inc: { wallet: bonus3 } },
+            { new: true }
+          );
+          console.log("parent03:", parent03);
+        }
+      }
     }
-    const bonus = (amount / 100) * 10;
-    // Update both user's parent wallet and team wallet in parallel
-
-    const parentUpdate = await User.findOneAndUpdate(
-      { username: parent },
-      { $inc: { wallet: bonus } },
-      { new: true }
-    );
-
-    const teamUpdate = await Team.findOneAndUpdate(
-      { team: parent },
-      { $inc: { teamWallet: bonus } },
-      { new: true }
-    );
+ 
     const userUpdate = await User.findOneAndUpdate(
       { username },
       { flag: true },
       { new: true }
     );
 
-    await Promise.all([parentUpdate, teamUpdate, userUpdate]);
+    await Promise.all([userUpdate]);
 
-    return res.json({ msg: "Reward successfully distributed", bonus });
+    return res.json({ msg: "Reward successfully distributed" });
   } catch (error) {
+    console.log(error);
     res.status(500).json({ msg: "Internal server error" });
   }
 });
@@ -800,7 +838,7 @@ app.post("/total-teams-details", async (req, res) => {
   for (let j = 0; j < teams.level2.length; j++) {
     teams.level3.push(await User.find({ parent: teams.level2[j].username }));
   }
-   
+
   teams.level3 = teams.level3.flat(2);
   for (let k = 0; k < teams.level3.length; k++) {
     teams.level4.push(await User.find({ parent: teams.level3[k].username }));
@@ -814,15 +852,139 @@ app.post("/total-teams-details", async (req, res) => {
     teams.level6.push(await User.find({ parent: teams.level5[m].username }));
   }
   teams.level6 = teams.level6.flat(2);
- 
- 
-
- 
-  
   if (!teams) {
     return res.status(404).json({ msg: "No teams found" });
   }
   return res.json({ teams });
+});
+//Assign Bonus
+app.post("/assign-bonus", async (req, res) => {
+  const { username, level, bonus } = req.body;
+  try {
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+    if (level === 1 && !user.level1Bonus) {
+      user.level1Bonus = true;
+      user.wallet += bonus;
+    } else if (level === 2 && !user.level2Bonus) {
+      user.level2Bonus = true;
+      user.wallet += bonus;
+    } else if (level === 3 && !user.level3Bonus) {
+      user.level3Bonus = true;
+      user.wallet += bonus;
+    } else if (level === 4 && !user.level4Bonus) {
+      user.level4Bonus = true;
+      user.wallet += bonus;
+    } else if (level === 5 && !user.level5Bonus) {
+      user.level5Bonus = true;
+      user.wallet += bonus;
+    } else if (level === 6 && !user.level6Bonus) {
+      user.level6Bonus = true;
+      user.wallet += bonus;
+    }
+    await user.save();
+    res.json({ msg: true });
+  } catch (error) {
+    console.error("Error assigning bonus:", error);
+    res.status(500).json({ msg: "Internal server error" });
+  }
+});
+// Serve static files from the React app
+
+//Admin Panel APIs
+
+//1. Get all users
+app.get("/totalUsers", async (req, res) => {
+  try {
+    const users = await User.find({});
+    res.json({ users });
+  } catch (error) {
+    console.error("Error fetching total users:", error);
+    res.status(500).json({ msg: "Internal server error" });
+  }
+});
+//2.Update the users
+app.post("/update-user", async (req, res) => {
+  try {
+    const { username, email, phone, wallet } = req.body;
+    const user = await User.findOne({ username });
+    user.email = email;
+    user.phone = phone;
+    user.wallet = wallet;
+    await user.save();
+    res.send({ msg: "Success" });
+  } catch (error) {
+    res.send(error);
+  }
+});
+//3.Get All Tasks
+app.get("/get-tasks", async (req, res) => {
+  try {
+    const task = await Task.find();
+    res.json(task);
+  } catch (error) {
+    res.status(500).json({ msg: "Internal server error" });
+  }
+});
+//4.Edit any task
+app.post("/edit-task", async (req, res) => {
+  try {
+    const { _id, title, reward, type, date } = req.body;
+    const task = await Task.findOne({ _id });
+    task.title = title;
+    task.reward = reward;
+    task.type = type;
+    task.date = date;
+    await task.save();
+    res.send({ msg: "Success" });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ msg: "Internal server error" });
+  }
+});
+//Create Admin Model
+const adminSchema = new mongoose.Schema({
+  username: { type: String },
+  password: { type: String },
+});
+const Admin = mongoose.model("Admin", adminSchema);
+//5.Register the Admin
+app.post("/register-admin", async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    const admin = await Admin.create({ username, password: hashedPassword });
+
+    res.json(admin);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json("Not Created");
+  }
+});
+//6.Login the Admin
+app.post("/login-admin", async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const admin = await Admin.findOne({ username });
+    if (!admin) {
+      return res.status(401).json({ msg: "Invalid Credentials" });
+    }
+    const isMatch = bcrypt.compare(password, admin.password);
+    if (!isMatch) {
+      return res.status(401).json({ msg: "Invalid Credentials" });
+    }
+    const token = jwt.sign({ username: admin.username }, SECRET_KEY, {
+      expiresIn: "1h",
+    });
+    return res.json({ token });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json("Internal Server Error");
+  }
 });
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
