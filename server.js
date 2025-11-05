@@ -359,7 +359,7 @@ app.get("/view-task", authenticateToken, async (req, res) => {
     if (userDetails.tasks.length === 0) {
       await User.findOneAndUpdate({ username }, { tasks }, { new: true });
       return res.json({ tasks });
-    } else if (userDetails.tasks.length > 0 && currentTaskDate === today) {
+    } else if (userDetails.tasks.length > 0 && currentTaskDate !== today) {
       await User.findOneAndUpdate({ username }, { tasks }, { new: true });
       return res.json({ tasks });
     }
